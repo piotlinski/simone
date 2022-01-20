@@ -253,3 +253,8 @@ dmypy.json
 # Cython debug symbols
 cython_debug/
 
+
+## Custom stuff
+.python-version
+dataset/
+wandb/

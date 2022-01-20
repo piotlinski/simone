@@ -13,7 +13,7 @@ from data import get_datamodule
 from models import SIMONE
 from util import str2bool
 from config import LOG_FREQ
-from logging import WandbCallback
+from metrics import WandbCallback
 import wandb_lib
 
 

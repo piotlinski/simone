@@ -25,12 +25,10 @@ Small model:
 - ~.95 ARI on CATER
 - [Weights and Biases run metrics](https://wandb.ai/sourceress/simone_public/runs/qataicib?workspace=user-zplizzi)
 
-## Dependencies
+## Installing
 
-(non-exhaustive list)
+Tested on Ubuntu 20.04; Python 3.9.2
 
-- pytorch 1.10
-- tensorflow CPU-only (the GPU interferes with pytorch for some reason on my machine): https://storage.googleapis.com/tensorflow/linux/cpu/tensorflow_cpu-2.7.0-cp39-cp39-manylinux2010_x86_64.whl
-- einops
-- wandb[service]
-- this version of pytorch-lightning: git+https://github.com/wandb/pytorch-lightning.git@wandb-service-attach
+`pip install -r requirements.txt`
+
+The exact version of pytorch, etc may need adjusted to match your system.

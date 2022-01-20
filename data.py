@@ -45,6 +45,7 @@ def fetch_dataset(local_dir="dataset/"):
 
         if not exists(local_path):
             urllib.request.urlretrieve(url, local_path)
+            print(f"downloaded {url} to {local_path}")
         return url
 
     urls = []
@@ -53,7 +54,9 @@ def fetch_dataset(local_dir="dataset/"):
             os.makedirs(f"{local_dir}/{dataset}")
         for i in range(100):
             urls.append((dataset, i))
-    ThreadPool(8).imap_unordered(download_file, urls)
+    out = ThreadPool(8).imap_unordered(download_file, urls)
+    for result in out:
+        pass
 
 
 def yield_item_from_deepmind_dataset(dataset, sample_limit=None):
