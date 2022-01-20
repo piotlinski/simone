@@ -3,14 +3,11 @@ A Pytorch implementation of [SIMONe: View-Invariant, Temporally-Abstracted Objec
 
 Currently, only the [CATER](https://github.com/deepmind/multi_object_datasets) dataset has been implemented.
 
-## TODOs
-
-- Validate on multiple val batches.
-- create a proper requirements.py file
-
 ## Usage
 
 The CATER dataset should download automatically on the first run of `train.py`. `batch_size` is per-GPU, so the total batch size is `batch_size * gpus`.
+
+See `train.py --help` for valid flags.
 
 Small model:
 `python train.py --batch_size 4 --learning_rate .0002 --gpus 4 --transformer_layers 1`

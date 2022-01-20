@@ -36,6 +36,7 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=2)
     parser.add_argument("--decoder_layer_norm", type=str2bool, default=True)
     parser.add_argument("--decoder_ln_scale_bias", type=str2bool, default=False)
+    parser.add_argument("--val_batches", type=int, default=10)
     args = parser.parse_args()
 
     pl.seed_everything(args.seed)
@@ -96,7 +97,7 @@ if __name__ == "__main__":
         n_gpus=args.gpus,
         train_batch_size=args.batch_size,
         val_batch_size=val_batch_size,
-        val_dataset_size=val_batch_size,  # just have 1 val batch
+        val_dataset_size=val_batch_size * args.val_batches,
         num_workers=num_workers,  # This is only applied for train. val has 1 worker
     )
     datamodule.setup()

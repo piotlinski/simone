@@ -64,7 +64,6 @@ class WandbCallback(pl.Callback):
         weighted_pixels = outputs["weighted_pixels"]
         weights_softmax = outputs["weights_softmax"]
         pixels = outputs["pixels"]
-        loss = outputs["loss"]
 
         # do all the gathering
         weighted_pixels = rearrange(pl_module.all_gather(weighted_pixels), "g b t h w c -> (g b) t h w c")
