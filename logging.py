@@ -1,16 +1,14 @@
-import pytorch_lightning as pl
 import torch
 import torch.distributed
-
-from quarantine.zack.videogpt.videogpt import wandb_lib
-
-from .config import LOG_FREQ
-from .util import generate_segmentation
-from .segmentation_metrics import compute_ari
-
+import pytorch_lightning as pl
 from einops import rearrange
 
-from .util import generate_color_palette
+from config import LOG_FREQ
+from util import generate_segmentation
+from segmentation_metrics import compute_ari
+import wandb_lib
+from util import generate_color_palette
+
 colors = generate_color_palette(16)
 
 

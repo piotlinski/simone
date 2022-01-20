@@ -25,7 +25,7 @@ from os.path import exists
 from multiprocessing.pool import ThreadPool
 import os
 
-from quarantine.zack.simone import cater_with_masks
+import cater_with_masks
 import torch
 from torch.utils.data import DataLoader
 from torch.utils.data import Dataset, IterableDataset

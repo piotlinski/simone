@@ -29,7 +29,6 @@ Small model:
 
 (non-exhaustive list)
 
-- python 3.9
 - pytorch 1.10
 - tensorflow CPU-only (the GPU interferes with pytorch for some reason on my machine): https://storage.googleapis.com/tensorflow/linux/cpu/tensorflow_cpu-2.7.0-cp39-cp39-manylinux2010_x86_64.whl
 - einops

@@ -8,8 +8,8 @@ from torch.nn import TransformerEncoder
 from torch.nn import TransformerEncoderLayer
 from einops import rearrange, repeat
 
-from .util import PositionalEncoding3D
-from .config import ENCODER_CONV_CHANNELS, TRANSFORMER_CHANNELS, LATENT_CHANNELS, K, T
+from util import PositionalEncoding3D
+from config import ENCODER_CONV_CHANNELS, TRANSFORMER_CHANNELS, LATENT_CHANNELS, K, T
 
 
 class SIMONE(pl.LightningModule):
@@ -144,7 +144,7 @@ class SIMONE(pl.LightningModule):
     def step(self, videos, full_res_decode=False):
         outputs = self(videos, full_res_decode)
         losses = self.loss(videos, full_res_decode=full_res_decode, **outputs)
-        return losses | outputs
+        return {**losses, **outputs}
 
     def training_step(self, batch, batch_idx):
         videos, _ = batch

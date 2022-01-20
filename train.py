@@ -3,19 +3,18 @@ import os
 from datetime import datetime
 
 import pytorch_lightning as pl
-import wandb
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger
+import wandb
 import torch.distributed
 
-from quarantine.zack.simone.data import fetch_dataset
-from quarantine.zack.simone.data import get_datamodule
-from quarantine.zack.simone.models import SIMONE
-from quarantine.zack.videogpt.videogpt import wandb_lib
-from quarantine.zack.videogpt.videogpt.utils import str2bool
-
-from .config import LOG_FREQ
-from .logging import WandbCallback
+from data import fetch_dataset
+from data import get_datamodule
+from models import SIMONE
+from util import str2bool
+from config import LOG_FREQ
+from logging import WandbCallback
+import wandb_lib
 
 
 if __name__ == "__main__":

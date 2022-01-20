@@ -1,5 +1,5 @@
 # Base logging frequency (in steps)
-LOG_FREQ = 100
+LOG_FREQ = 500
 
 
 ENCODER_CONV_CHANNELS = 128

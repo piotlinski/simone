@@ -17,7 +17,8 @@
 """Implementation of the adjusted Rand index."""
 
 import tensorflow.compat.v1 as tf
-from quarantine.zack.simone import cater_with_masks
+
+import cater_with_masks
 
 
 def compute_ari(mask, weights_softmax):
