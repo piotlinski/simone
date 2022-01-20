@@ -31,4 +31,7 @@ Tested on Ubuntu 20.04; Python 3.9.2
 
 `pip install -r requirements.txt`
 
+If that doesn't work, try the fully pinned package list:
+`pip install -r requirements_pinned.txt`
+
 The exact version of pytorch, etc may need adjusted to match your system.
