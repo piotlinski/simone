@@ -2,8 +2,8 @@
 torch==1.10.1+cu113
 torchvision==0.11.2+cu113
 https://storage.googleapis.com/tensorflow/linux/cpu/tensorflow_cpu-2.7.0-cp39-cp39-manylinux2010_x86_64.whl
-einops
-wandb[service]
+einops==0.4.0
+wandb[service]==0.12.9
 git+https://github.com/wandb/pytorch-lightning.git@wandb-service-attach
 setuptools==59.5.0  # downgrade required to avoid a pytorch bug patched after 1.10.0
-moviepy
+moviepy==1.0.3
