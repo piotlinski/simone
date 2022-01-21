@@ -6,6 +6,19 @@ import torch
 import torch.nn as nn
 
 
+def check_shape(x, shape, **kwargs):
+    """An einops-style shape assertion.
+
+    Discussed in https://github.com/arogozhnikov/einops/issues/168
+    """
+    dims = shape.split(" ")
+    assert len(x.shape) == len(dims)
+    for k, v in kwargs.items():
+        # assert k in dims
+        assert x.shape[dims.index(k)] == v
+
+
+
 def get_latent_dist(latent, log_scale_min=-10, log_scale_max=3):
     """Convert the MLP output (with mean and log std) into a torch `Normal` distribution."""
     means = latent[..., 0]
