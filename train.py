@@ -10,7 +10,7 @@ import torch.distributed
 
 from data import fetch_dataset
 from data import get_datamodule
-from models import SIMONE
+from model import SIMONE
 from util import str2bool
 from config import LOG_FREQ
 from metrics import WandbCallback

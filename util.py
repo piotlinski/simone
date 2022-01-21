@@ -6,6 +6,17 @@ import torch
 import torch.nn as nn
 
 
+def get_latent_dist(latent, log_scale_min=-10, log_scale_max=3):
+    """Convert the MLP output (with mean and log std) into a torch `Normal` distribution."""
+    means = latent[..., 0]
+    log_scale = latent[..., 1]
+    # Clamp the minimum to keep latents from getting too far into the saturating region of the exp
+    # And the max because i noticed it exploding early in the training sometimes
+    log_scale = log_scale.clamp(min=log_scale_min, max=log_scale_max)
+    dist = torch.distributions.normal.Normal(means, torch.exp(log_scale))
+    return dist
+
+
 def str2bool(v):
     if isinstance(v, bool):
         return v
