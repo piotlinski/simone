@@ -18,8 +18,6 @@ class SIMONE(pl.LightningModule):
             beta_o,
             sigma_x,
             transformer_layers,
-            decoder_layer_norm,
-            decoder_ln_scale_bias,
     ):
         super().__init__()
         self.save_hyperparameters(args)

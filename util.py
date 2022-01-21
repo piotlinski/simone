@@ -18,7 +18,6 @@ def check_shape(x, shape, **kwargs):
         assert x.shape[dims.index(k)] == v
 
 
-
 def get_latent_dist(latent, log_scale_min=-10, log_scale_max=3):
     """Convert the MLP output (with mean and log std) into a torch `Normal` distribution."""
     means = latent[..., 0]
@@ -104,11 +103,3 @@ class PositionalEncoding3D(nn.Module):
         emb[:, :, :, 2 * self.channels :] = emb_z
 
         return emb[None, :, :, :, :orig_ch].repeat(batch_size, 1, 1, 1, 1)
-
-
-def compute_cov_matrix(X):
-    # torch.cov doesn't support batched cov calculation :/
-    D = X.shape[-1]
-    mean = torch.mean(X, dim=-1).unsqueeze(-1)
-    X = X - mean
-    return 1 / (D - 1) * X @ X.transpose(-1, -2)

@@ -4,12 +4,10 @@ import pytorch_lightning as pl
 import torch
 import torch.nn.functional as F
 from torch.nn import Conv2d
-from torch.nn import TransformerEncoder
-from torch.nn import TransformerEncoderLayer
 from einops import rearrange, repeat
 
-from util import PositionalEncoding3D
-from config import ENCODER_CONV_CHANNELS, TRANSFORMER_CHANNELS, LATENT_CHANNELS, K, T
+from config import LATENT_CHANNELS, K, T
+from util import get_latent_dist
 
 
 class Decoder(pl.LightningModule):
@@ -19,18 +17,16 @@ class Decoder(pl.LightningModule):
 
         # All convolutions have stride 1 and kernel size 1,
         # as this is really just a MLP over the channel dimension
-        self.c1 = Conv2d(in_channels=LATENT_CHANNELS * 2 + 3, out_channels=512, kernel_size=1, stride=1)
         self.convs = torch.nn.ModuleList(
-            [Conv2d(in_channels=512, out_channels=512, kernel_size=1, stride=1) for _ in range(4)]
+            [
+                Conv2d(in_channels=LATENT_CHANNELS * 2 + 3, out_channels=512, kernel_size=1, stride=1),
+                *[Conv2d(in_channels=512, out_channels=512, kernel_size=1, stride=1) for _ in range(4)],
+                Conv2d(in_channels=512, out_channels=4, kernel_size=1, stride=1)
+             ]
         )
-        self.c6 = Conv2d(in_channels=512, out_channels=4, kernel_size=1, stride=1)
-
-        # Parameters for the non-standard layer norm scale + bias
-        if self.hparams.decoder_ln_scale_bias:
-            self.ln_weight = torch.nn.Parameter(torch.tensor(1.0))
-            self.ln_bias = torch.nn.Parameter(torch.tensor(0.0))
 
     def forward(self, object_latents, temporal_latents, full_size_decode=False):
+        batch_size = object_latents.shape[0]
         if full_size_decode:
             OUTPUT_RES = 64
             Td = 16
@@ -39,17 +35,13 @@ class Decoder(pl.LightningModule):
             Td = 8
 
         # randomly downsample time axis to size Td
-        if not full_size_decode:
-            time_indexes = torch.tensor(sorted(random.sample(range(T), Td)), device=self.device)
-        else:
-            time_indexes = None
+        # if Td=T, this will just equal `range(T)`
+        time_indexes = torch.tensor(sorted(random.sample(range(T), Td)), device=self.device)
 
-        batch_size = object_latents.shape[0]
         assert object_latents.shape == (batch_size, K, LATENT_CHANNELS, 2)
         assert temporal_latents.shape == (batch_size, T, LATENT_CHANNELS, 2)
-        if not full_size_decode:
-            # Downsample temporal latents along time axis also
-            temporal_latents = temporal_latents.index_select(dim=1, index=time_indexes)
+        # Downsample temporal latents along time axis
+        temporal_latents = temporal_latents.index_select(dim=1, index=time_indexes)
 
         # for each t, k, i tuple, we want a sample from object latent k and temporal latent t.
         # these get concatted with an indicator for i and t and used as the input to the conv.
@@ -68,8 +60,7 @@ class Decoder(pl.LightningModule):
         # Form the T, X, Y indicators
         desired_shape = (batch_size, Td, K, OUTPUT_RES, OUTPUT_RES, 1)
         t_linspace = torch.linspace(0, 1, T, device=self.device, dtype=object_latents.dtype)
-        if not full_size_decode:
-            t_linspace = t_linspace.index_select(dim=0, index=time_indexes)
+        t_linspace = t_linspace.index_select(dim=0, index=time_indexes)
         t_encoding = create_position_encoding(t_linspace, desired_shape, dim=1)
 
         xy_linspace = torch.linspace(-1, 1, 64, device=self.device, dtype=object_latents.dtype)
@@ -86,17 +77,12 @@ class Decoder(pl.LightningModule):
 
         # Do the convolution stack
         x = rearrange(x, "b td k h w c -> (b td k) c h w", c=2 * LATENT_CHANNELS + 3)
-        x = self.c1(x)
-        x = F.relu(x)
-
-        for conv in self.convs:
+        for conv in self.convs[:-1]:
             x = conv(x)
             x = F.relu(x)
+        # don't apply relu after the last conv
+        x = self.convs[-1](x)
 
-        x = self.c6(x)
-        assert x.shape == (batch_size * Td * K, 4, OUTPUT_RES, OUTPUT_RES)
-
-        # Convert back to preferred shape
         x = rearrange(x, "(b td k) c h w -> b td k h w c", td=Td, k=K, c=4)
         pixels = x[..., 0:3]
 
@@ -104,18 +90,8 @@ class Decoder(pl.LightningModule):
         # They also said they used a scale and bias, but it's not clear to me how that would work.
         # The usual layer norm has a scale + bias for each individual element in the tensor,
         # but since we test at higher resolution than we train, the input tensor changes shape, and this doesn't work.
-        # I've added a feature flag to apply a single mean + scale to the entire tensor,
-        # but have mainly left this disabled and still get good results.
         weights = x[..., 3]
-        if self.hparams.decoder_layer_norm:
-            if self.hparams.decoder_ln_scale_bias:
-                weight = self.ln_weight.reshape(1, 1, 1, 1).expand(Td, K, OUTPUT_RES, OUTPUT_RES)
-                bias = self.ln_bias.reshape(1, 1, 1, 1).expand(Td, K, OUTPUT_RES, OUTPUT_RES)
-                # wandb_lib.log_scalar(trainer, "debug/ln_weight", self.ln_weight.data, freq=LOG_FREQ)
-                # wandb_lib.log_scalar(trainer, "debug/ln_bias", self.ln_bias.data, freq=LOG_FREQ)
-                weights = F.layer_norm(weights, [Td, K, OUTPUT_RES, OUTPUT_RES], weight, bias)
-            else:
-                weights = torch.nn.functional.layer_norm(weights, [Td, K, OUTPUT_RES, OUTPUT_RES])
+        weights = torch.nn.functional.layer_norm(weights, [Td, K, OUTPUT_RES, OUTPUT_RES])
 
         assert pixels.shape == (batch_size, Td, K, OUTPUT_RES, OUTPUT_RES, 3)
         assert weights.shape == (batch_size, Td, K, OUTPUT_RES, OUTPUT_RES)
@@ -127,3 +103,16 @@ class Decoder(pl.LightningModule):
         assert weighted_pixels.shape == (batch_size, Td, OUTPUT_RES, OUTPUT_RES, 3)
 
         return pixels, weights, weights_softmax, weighted_pixels, time_indexes
+
+
+def create_position_encoding(range, target_shape, dim):
+    """Create a tensor of shape `target_shape` that is filled with values from `range` along `dim`."""
+    assert len(range.shape) == 1
+    assert len(range) == target_shape[dim]
+
+    view_shape = [1 for _ in target_shape]
+    view_shape[dim] = target_shape[dim]
+    range = range.view(view_shape)
+    encoding = range.expand(target_shape)
+    assert encoding.shape == target_shape
+    return encoding

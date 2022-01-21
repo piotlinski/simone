@@ -10,8 +10,7 @@ import torch.distributed
 
 from data import fetch_dataset
 from data import get_datamodule
-from model import SIMONE
-from util import str2bool
+from model.simone import SIMONE
 from config import LOG_FREQ
 from metrics import WandbCallback
 import wandb_lib
@@ -34,8 +33,6 @@ if __name__ == "__main__":
     parser.add_argument("--ckpt_runid", type=str, default=None)
     parser.add_argument("--transformer_layers", type=int, default=4)
     parser.add_argument("--seed", type=int, default=2)
-    parser.add_argument("--decoder_layer_norm", type=str2bool, default=True)
-    parser.add_argument("--decoder_ln_scale_bias", type=str2bool, default=False)
     parser.add_argument("--val_batches", type=int, default=10)
     args = parser.parse_args()
 
@@ -46,8 +43,6 @@ if __name__ == "__main__":
         "beta_o": args.beta_o,
         "sigma_x": args.sigma_x,
         "transformer_layers": args.transformer_layers,
-        "decoder_layer_norm": args.decoder_layer_norm,
-        "decoder_ln_scale_bias": args.decoder_ln_scale_bias,
     }
     # Load checkpoint if specified
     if args.ckpt_file and args.ckpt_runid:

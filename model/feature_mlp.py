@@ -1,15 +1,9 @@
-import random
-
 import pytorch_lightning as pl
 import torch
 import torch.nn.functional as F
-from torch.nn import Conv2d
-from torch.nn import TransformerEncoder
-from torch.nn import TransformerEncoderLayer
-from einops import rearrange, repeat
+from einops import rearrange
 
-from util import PositionalEncoding3D
-from config import ENCODER_CONV_CHANNELS, TRANSFORMER_CHANNELS, LATENT_CHANNELS, K, T
+from config import TRANSFORMER_CHANNELS, LATENT_CHANNELS, K, T
 
 
 class FeatureMLP(pl.LightningModule):
