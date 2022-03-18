@@ -1,20 +1,26 @@
 import pytorch_lightning as pl
 import torch
 import torch.nn.functional as F
+from einops import rearrange
+from torch import Tensor
 from torch.nn import TransformerEncoder
 from torch.nn import TransformerEncoderLayer
-from einops import rearrange
 
-from util import PositionalEncoding3D
-from config import ENCODER_CONV_CHANNELS, TRANSFORMER_CHANNELS, T
+from constants import ENCODER_CONV_CHANNELS
+from constants import TRANSFORMER_CHANNELS
+from constants import XY_SPATIAL_DIM_AFTER_CONV_ENCODER
+from constants import XY_SPATIAL_DIM_AFTER_TRANSFORMER
+from constants import T
+from contrib.position_encoding import PositionalEncoding3D
 
 
 class EncoderTransformer(pl.LightningModule):
-    def __init__(self, args):
+    def __init__(self, transformer_layers: int):
         super().__init__()
-        self.save_hyperparameters(args)
+        self.save_hyperparameters()
 
-        l = TransformerEncoderLayer(
+        # this template layer will get cloned inside the TransformerEncoder modules below.
+        encoder_layer_template = TransformerEncoderLayer(
             d_model=TRANSFORMER_CHANNELS,
             nhead=5,
             dim_feedforward=1024,
@@ -22,41 +28,40 @@ class EncoderTransformer(pl.LightningModule):
             batch_first=True,
             norm_first=True,
         )
-        self.l1 = torch.nn.Linear(in_features=ENCODER_CONV_CHANNELS, out_features=TRANSFORMER_CHANNELS, bias=False)
+        self.linear_layer = torch.nn.Linear(
+            in_features=ENCODER_CONV_CHANNELS, out_features=TRANSFORMER_CHANNELS, bias=False
+        )
 
-        self.t1 = TransformerEncoder(encoder_layer=l, num_layers=self.hparams.transformer_layers)
-        self.t2 = TransformerEncoder(encoder_layer=l, num_layers=self.hparams.transformer_layers)
+        self.transformer_1 = TransformerEncoder(encoder_layer=encoder_layer_template, num_layers=transformer_layers)
+        self.transformer_2 = TransformerEncoder(encoder_layer=encoder_layer_template, num_layers=transformer_layers)
 
-        self.p1 = PositionalEncoding3D(TRANSFORMER_CHANNELS)
-        self.p2 = PositionalEncoding3D(TRANSFORMER_CHANNELS)
+        self.position_encoding_1 = PositionalEncoding3D(TRANSFORMER_CHANNELS)
+        self.position_encoding_2 = PositionalEncoding3D(TRANSFORMER_CHANNELS)
 
-    def forward(self, x):
+    def forward(self, x: Tensor):
         batch_size = x.shape[0]
-        x = rearrange(x, "b t c h w -> b t h w c", t=T, h=8, w=8, c=ENCODER_CONV_CHANNELS)
+        x = rearrange(x, "b t c h w -> b t h w c", b=batch_size, t=T, h=XY_SPATIAL_DIM_AFTER_CONV_ENCODER, w=XY_SPATIAL_DIM_AFTER_CONV_ENCODER, c=ENCODER_CONV_CHANNELS)  # fmt: skip
 
-        # Apply linear transformation to project ENCODER_CONV_CHANNELS to TRANSFORMER_CHANNELS
-        x = self.l1(x)
+        # apply linear transformation to project ENCODER_CONV_CHANNELS to TRANSFORMER_CHANNELS
+        x = self.linear_layer(x)
 
-        # apply 3d position encoding
-        x = x + self.p1(x)
+        # apply 3d position encoding before going through the first transformer
+        x = x + self.position_encoding_1(x)
+        x = rearrange(x, "b t h w c -> b (t h w) c", b=batch_size, t=T, h=XY_SPATIAL_DIM_AFTER_CONV_ENCODER, w=XY_SPATIAL_DIM_AFTER_CONV_ENCODER, c=TRANSFORMER_CHANNELS)  # fmt: skip
 
-        # Convert TxWxH into a linear sequence for the transformer
-        x = rearrange(x, "b t h w c -> b (t h w) c", t=T, h=8, w=8, c=TRANSFORMER_CHANNELS)
+        x = self.transformer_1(x)
+        x = rearrange(x, "b (t h w) c -> (b t) c h w", b=batch_size, t=T, h=XY_SPATIAL_DIM_AFTER_CONV_ENCODER, w=XY_SPATIAL_DIM_AFTER_CONV_ENCODER, c=TRANSFORMER_CHANNELS)  # fmt: skip
+        # This is the scaling that the paper suggests,
+        # (K / XY_SPATIAL_DIM_AFTER_CONV_ENCODER**2) ** 0.5 equals 1/2 with default values
+        # x = F.avg_pool2d(x, kernel_size=2) * (K / XY_SPATIAL_DIM_AFTER_CONV_ENCODER**2) ** 0.5
+        # But I found that this works notably better, at least early in training.
+        x = F.avg_pool2d(x, kernel_size=2) * 2
+        x = rearrange(x, "(b t) c h w -> b t h w c", b=batch_size, t=T, h=XY_SPATIAL_DIM_AFTER_TRANSFORMER, w=XY_SPATIAL_DIM_AFTER_TRANSFORMER, c=TRANSFORMER_CHANNELS)  # fmt: skip
 
-        # First transformer stage
-        x = self.t1(x)
+        # add another 3d position encoding before the second transformer
+        x = x + self.position_encoding_2(x)
+        x = rearrange(x, "b t h w c -> b (t h w) c", b=batch_size, t=T, h=XY_SPATIAL_DIM_AFTER_TRANSFORMER, w=XY_SPATIAL_DIM_AFTER_TRANSFORMER, c=TRANSFORMER_CHANNELS)  # fmt: skip
+        x = self.transformer_2(x)
+        assert x.shape == (batch_size, T * XY_SPATIAL_DIM_AFTER_TRANSFORMER * XY_SPATIAL_DIM_AFTER_TRANSFORMER, TRANSFORMER_CHANNELS)  # fmt: skip
 
-        # Do their weird pooling to reshape from TxWxH to TxK
-        # Need to convert to b * t, c, h, w
-        x = rearrange(x, "b (t h w) c -> (b t) c h w", t=T, h=8, w=8, c=TRANSFORMER_CHANNELS)
-        x = F.avg_pool2d(x, kernel_size=2) * 4 / 2
-        x = rearrange(x, "(b t) c h w -> b t h w c", t=T, h=4, w=4, c=TRANSFORMER_CHANNELS)
-
-        # Another position encoding
-        x = x + self.p2(x)
-
-        x = rearrange(x, "b t h w c -> b (t h w) c", t=T, h=4, w=4, c=TRANSFORMER_CHANNELS)
-        # Second transformer stage
-        x = self.t2(x)
-        assert x.shape == (batch_size, T * 4 * 4, TRANSFORMER_CHANNELS)
         return x

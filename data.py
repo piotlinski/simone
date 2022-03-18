@@ -18,23 +18,25 @@ so we just won't load some shards. And 2 of the training shards don't have an ev
 so we just excluded those entirely since we need each worker to have an identical number of examples.
 """
 import os
-# Turn off annoying tensorflow warnings
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 import urllib.request
-from os.path import exists
 from multiprocessing.pool import ThreadPool
-import os
+from os.path import exists
+from typing import Optional
 
-import cater_with_masks
-import torch
-from torch.utils.data import DataLoader
-from torch.utils.data import Dataset, IterableDataset
-from einops import rearrange
 import pytorch_lightning as pl
+import torch
 import torch.distributed
+from einops import rearrange
+from torch.utils.data import DataLoader
+from torch.utils.data import IterableDataset
+
+from contrib.deepmind import cater_with_masks
+
+# Turn off annoying tensorflow warnings
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 
 
-def fetch_dataset(local_dir="dataset/"):
+def download_dataset(local_dir: str = "dataset/"):
     """Download the dataset to `local_dir`."""
     # It might be possible to create a tfrecords dataset directly from the GCP URLs instead of downloading locally?
     def download_file(x):
@@ -59,21 +61,21 @@ def fetch_dataset(local_dir="dataset/"):
         pass
 
 
-def yield_item_from_deepmind_dataset(dataset, sample_limit=None):
+def _yield_item_from_deepmind_dataset(dataset, sample_limit=None):
     # batch_dataset = dataset.batch(batch_size)
     for i, item in enumerate(dataset):
         if sample_limit and i >= sample_limit:
             break
         video = item["image"][:16]
         mask = item["mask"][:16]
-        video = (torch.tensor(video.numpy()) / 255)
+        video = torch.tensor(video.numpy()) / 255
         video = rearrange(video, "t h w c -> t c h w")
         # shape b, T, n_objects, w, h, 1
         mask = torch.tensor(mask.numpy())
         yield video, mask
 
 
-def tfrecords_paths(mode="train", local_dir="dataset/"):
+def _tfrecords_paths(mode: str = "train", local_dir: str = "dataset/"):
     """Get a list of the tfrecord file paths."""
     assert mode in ("train", "test")
     paths = []
@@ -89,8 +91,13 @@ def tfrecords_paths(mode="train", local_dir="dataset/"):
 
 
 class CaterWithMasks(IterableDataset):
-    def __init__(self, world_size, mode="train", sample_limit=None):
-        # Sample limit will apply to each worker separately
+    def __init__(self, world_size: int, mode: str = "train", sample_limit: int = None):
+        """
+        Args:
+            world_size: the number of DDP processes
+            mode: "train" or "test"
+            sample_limit: the max number of samples to use from the dataset. It applies to each worker separately.
+        """
         self.sample_limit = sample_limit
         self.world_size = world_size
         self.mode = mode
@@ -99,35 +106,40 @@ class CaterWithMasks(IterableDataset):
         ddp_idx = int(os.environ.get("LOCAL_RANK", 0))
         self.ddp_idx = ddp_idx
         n_ddp = self.world_size
-        all_paths = tfrecords_paths(self.mode)
+        all_paths = _tfrecords_paths(self.mode)
         num_files = len(all_paths) // n_ddp
-        self.this_gpu_paths = all_paths[ddp_idx * num_files: (ddp_idx + 1) * num_files]
+        self.this_gpu_paths = all_paths[ddp_idx * num_files : (ddp_idx + 1) * num_files]
 
         worker_info = torch.utils.data.get_worker_info()
         if worker_info is None:  # single-process data loading, return the full iterator
             our_paths = self.this_gpu_paths
-            print("single process loading")
         else:  # in a worker process
             idx = worker_info.id
-            # print(f"loading from {self.ddp_idx}, {idx} worker")
             num_workers = worker_info.num_workers
             num_files = len(self.this_gpu_paths) // num_workers
-            our_paths = self.this_gpu_paths[idx * num_files: (idx + 1) * num_files]
+            our_paths = self.this_gpu_paths[idx * num_files : (idx + 1) * num_files]
         tf_dataset = cater_with_masks.dataset(our_paths)
 
-        return iter(yield_item_from_deepmind_dataset(tf_dataset, sample_limit = self.sample_limit))
+        return iter(_yield_item_from_deepmind_dataset(tf_dataset, sample_limit=self.sample_limit))
 
 
 class CATERDataModule(pl.LightningDataModule):
-    def __init__(self, n_gpus, train_batch_size, val_batch_size, val_dataset_size, num_workers=4):
+    def __init__(
+        self,
+        n_gpus: int,
+        train_batch_size: int,
+        val_batch_size: int,
+        val_dataset_size: int,
+        num_train_workers: int = 4,
+    ):
         super().__init__()
         self.train_batch_size = train_batch_size
         self.val_batch_size = val_batch_size
-        self.num_workers = num_workers
+        self.num_train_workers = num_train_workers
         self.val_dataset_size = val_dataset_size
         self.n_gpus = n_gpus
 
-    def setup(self, stage = None):
+    def setup(self, stage: Optional[str] = None):
         self.train_dataset = CaterWithMasks(self.n_gpus, "train")
         self.val_dataset = CaterWithMasks(self.n_gpus, "test", sample_limit=self.val_dataset_size)
 
@@ -137,7 +149,7 @@ class CATERDataModule(pl.LightningDataModule):
             batch_size=self.train_batch_size,
             shuffle=False,
             drop_last=False,
-            num_workers=self.num_workers,
+            num_workers=self.num_train_workers,
         )
 
     def val_dataloader(self):
@@ -148,7 +160,3 @@ class CATERDataModule(pl.LightningDataModule):
             drop_last=False,
             num_workers=1,
         )
-
-
-def get_datamodule(n_gpus, train_batch_size, val_batch_size, val_dataset_size, num_workers):
-    return CATERDataModule(n_gpus, train_batch_size, val_batch_size, val_dataset_size, num_workers)
