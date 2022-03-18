@@ -1,65 +1,10 @@
-import random
-import argparse
+"""from https://github.com/tatp22/multidim-positional-encoding/blob/master/positional_encodings/positional_encodings.py"""
 
 import numpy as np
 import torch
-import torch.nn as nn
+from torch import nn as nn
 
 
-def check_shape(x, shape, **kwargs):
-    """An einops-style shape assertion.
-
-    Discussed in https://github.com/arogozhnikov/einops/issues/168
-    """
-    dims = shape.split(" ")
-    assert len(x.shape) == len(dims)
-    for k, v in kwargs.items():
-        # assert k in dims
-        assert x.shape[dims.index(k)] == v
-
-
-def get_latent_dist(latent, log_scale_min=-10, log_scale_max=3):
-    """Convert the MLP output (with mean and log std) into a torch `Normal` distribution."""
-    means = latent[..., 0]
-    log_scale = latent[..., 1]
-    # Clamp the minimum to keep latents from getting too far into the saturating region of the exp
-    # And the max because i noticed it exploding early in the training sometimes
-    log_scale = log_scale.clamp(min=log_scale_min, max=log_scale_max)
-    dist = torch.distributions.normal.Normal(means, torch.exp(log_scale))
-    return dist
-
-
-def str2bool(v):
-    if isinstance(v, bool):
-        return v
-    if v.lower() in ("yes", "true", "t", "y", "1"):
-        return True
-    elif v.lower() in ("no", "false", "f", "n", "0"):
-        return False
-    else:
-        raise argparse.ArgumentTypeError("Boolean value expected.")
-
-
-def generate_color_palette(num_masks: int):
-    out = []
-    for i in range(num_masks):
-        out.append(tuple([random.randint(0, 255) for _ in range(3)]))
-    return torch.tensor(out).to(torch.float) / 255
-
-
-def generate_segmentation(weights, colors):
-    colors = colors.to(weights.device)
-    # weights should have shape b, t, k, h, w
-    b, t, k, h, w = weights.shape
-    assert len(colors) == k
-    # colors should have shape k, 3
-    ce = colors.view(1, 1, k, 1, 1, 3).expand(b, t, k, h, w, 3)
-    wa = weights.argmax(dim=2)
-    we = wa.view(b, t, 1, h, w, 1).expand(b, t, 1, h, w, 3)
-    return torch.gather(ce, 2, we).view(b, t, h, w, 3)
-
-
-# from https://github.com/tatp22/multidim-positional-encoding/blob/master/positional_encodings/positional_encodings.py
 class PositionalEncoding3D(nn.Module):
     def __init__(self, channels, freq_base=1.0, freq_scale=10000.0):
         """

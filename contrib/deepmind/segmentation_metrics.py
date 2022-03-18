@@ -18,10 +18,11 @@
 
 import tensorflow.compat.v1 as tf
 
-import cater_with_masks
+from contrib.deepmind import cater_with_masks
 
 
 def compute_ari(mask, weights_softmax):
+    # (not original Deepmind code)
     # This is based on the example in: https://github.com/deepmind/multi_object_datasets/blob/master/README.md
     # weights_softmax has shape b, t, num_objects, w, h
 
@@ -33,15 +34,11 @@ def compute_ari(mask, weights_softmax):
     # where n_true_groups == max_num_entities. We implement this reshape below.
     # Note that 'oh' denotes 'one-hot'.
     batch_size, T, K, h, w = weights_softmax.shape
-    desired_shape = [batch_size,
-                     T * cater_with_masks.IMAGE_SIZE[0] * cater_with_masks.IMAGE_SIZE[1],
-                     max_num_entities]
+    desired_shape = [batch_size, T * cater_with_masks.IMAGE_SIZE[0] * cater_with_masks.IMAGE_SIZE[1], max_num_entities]
     true_groups_oh = tf.transpose(mask, [0, 1, 3, 4, 5, 2])
     true_groups_oh = tf.reshape(true_groups_oh, desired_shape)
 
-    desired_shape = [batch_size,
-                     T * cater_with_masks.IMAGE_SIZE[0] * cater_with_masks.IMAGE_SIZE[1],
-                     K]
+    desired_shape = [batch_size, T * cater_with_masks.IMAGE_SIZE[0] * cater_with_masks.IMAGE_SIZE[1], K]
     prediction = weights_softmax.permute(0, 1, 3, 4, 2).reshape(desired_shape)
     prediction = tf.convert_to_tensor(prediction.cpu().numpy())
 
@@ -52,7 +49,7 @@ def compute_ari(mask, weights_softmax):
     return ari.numpy()
 
 
-def adjusted_rand_index(true_mask, pred_mask, name='ari_score'):
+def adjusted_rand_index(true_mask, pred_mask, name="ari_score"):
     r"""Computes the adjusted Rand index (ARI), a clustering similarity score.
     This implementation ignores points with no cluster label in `true_mask` (i.e.
     those points for which `true_mask` is a zero vector). In the context of
@@ -93,7 +90,8 @@ def adjusted_rand_index(true_mask, pred_mask, name='ari_score'):
             raise ValueError(
                 "adjusted_rand_index requires n_groups < n_points. We don't handle "
                 "the special cases that can occur when you have one cluster "
-                "per datapoint.")
+                "per datapoint."
+            )
 
         true_group_ids = tf.argmax(true_mask, -1)
         pred_group_ids = tf.argmax(pred_mask, -1)
@@ -103,22 +101,21 @@ def adjusted_rand_index(true_mask, pred_mask, name='ari_score'):
 
         n_points = tf.cast(tf.reduce_sum(true_mask_oh, axis=[1, 2]), tf.float32)
 
-        nij = tf.einsum('bji,bjk->bki', pred_mask_oh, true_mask_oh)
+        nij = tf.einsum("bji,bjk->bki", pred_mask_oh, true_mask_oh)
         a = tf.reduce_sum(nij, axis=1)
         b = tf.reduce_sum(nij, axis=2)
 
         rindex = tf.reduce_sum(nij * (nij - 1), axis=[1, 2])
         aindex = tf.reduce_sum(a * (a - 1), axis=1)
         bindex = tf.reduce_sum(b * (b - 1), axis=1)
-        expected_rindex = aindex * bindex / (n_points*(n_points-1))
+        expected_rindex = aindex * bindex / (n_points * (n_points - 1))
         max_rindex = (aindex + bindex) / 2
         ari = (rindex - expected_rindex) / (max_rindex - expected_rindex)
 
         # The case where n_true_groups == n_pred_groups == 1 needs to be
         # special-cased (to return 1) as the above formula gives a divide-by-zero.
         # This might not work when true_mask has values that do not sum to one:
-        both_single_cluster = tf.logical_and(
-            _all_equal(true_group_ids), _all_equal(pred_group_ids))
+        both_single_cluster = tf.logical_and(_all_equal(true_group_ids), _all_equal(pred_group_ids))
         return tf.where(both_single_cluster, tf.ones_like(ari), ari)
 
 

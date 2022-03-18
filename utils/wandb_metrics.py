@@ -1,19 +1,34 @@
+import random
+
+import pytorch_lightning as pl
 import torch
 import torch.distributed
-import pytorch_lightning as pl
 from einops import rearrange
+from torch import Tensor
 
-from config import LOG_FREQ
-from util import generate_segmentation
-from segmentation_metrics import compute_ari
-import wandb_lib
-from util import generate_color_palette
+from constants import LOG_FREQ
+from contrib.deepmind.segmentation_metrics import compute_ari
 
-colors = generate_color_palette(16)
+from . import wandb_lib
+
+
+def _generate_color_palette(num_masks: int):
+    out = []
+    for i in range(num_masks):
+        out.append(tuple([random.randint(0, 255) for _ in range(3)]))
+    return torch.tensor(out).to(torch.float) / 255
+
+
+_COLORS = _generate_color_palette(16)
 
 
 class WandbCallback(pl.Callback):
-    """Here we just log a ton of stuff to make for easier debuggin."""
+    """Here we just log a ton of stuff to make for easier debugging."""
+
+    def __init__(self, batch_size):
+        super().__init__()
+        self.batch_size = batch_size
+
     def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx):
         batch, mask = batch
         spatial = outputs["object_latents"]
@@ -22,7 +37,7 @@ class WandbCallback(pl.Callback):
         weights_softmax = outputs["weights_softmax"]
         pixels = outputs["pixels"]
 
-        wandb_lib.log_iteration_time(trainer, pl_module.hparams.batch_size * pl_module.hparams.gpus)
+        wandb_lib.log_iteration_time(trainer, self.batch_size)
         wandb_lib.log_scalar(trainer, "train/loss", outputs["loss"], freq=1)
 
         wandb_lib.log_video(trainer, "videos/train_dataset", batch, freq=LOG_FREQ)
@@ -86,7 +101,7 @@ class WandbCallback(pl.Callback):
         wandb_lib.log_video(trainer, "val/pixels", pixels, freq=1)
 
         # Log segmentation mask
-        segmentation = generate_segmentation(weights_softmax, colors).permute(0, 1, 4, 2, 3)
+        segmentation = _generate_segmentation(weights_softmax, _COLORS).permute(0, 1, 4, 2, 3)
         wandb_lib.log_video(trainer, "val/segmentation", segmentation, freq=1)
 
         # Compute ARI
@@ -102,3 +117,16 @@ class WandbCallback(pl.Callback):
         wandb_lib.log_image(
             trainer, "latents/temporal_latent_std", temporal[0, ..., 1].exp().to(torch.float32), freq=1
         )
+
+
+def _generate_segmentation(weights: Tensor, colors: Tensor):
+    """Generate a segmentation mask visualization."""
+    colors = colors.to(weights.device)
+    # weights should have shape b, t, k, h, w
+    b, t, k, h, w = weights.shape
+    assert len(colors) == k
+    # colors should have shape k, 3
+    ce = colors.view(1, 1, k, 1, 1, 3).expand(b, t, k, h, w, 3)
+    wa = weights.argmax(dim=2)
+    we = wa.view(b, t, 1, h, w, 1).expand(b, t, 1, h, w, 3)
+    return torch.gather(ce, 2, we).view(b, t, h, w, 3)

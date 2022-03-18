@@ -1,10 +1,10 @@
 """A little utility library to make for easy logging to wandb."""
+import math
 import secrets
 import time
 
 import torch
 import wandb
-import math
 
 last_time = None
 last_step = None
@@ -13,10 +13,10 @@ LOG_BACKOFF_FACTOR = 20
 
 
 def make_video_grid(
-        tensor,
-        num_images_per_row: int = 10,
-        padding: int = 2,
-        pad_value: int = 0,
+    tensor,
+    num_images_per_row: int = 10,
+    padding: int = 2,
+    pad_value: int = 0,
 ):
     """
     This is a repurposed implementation of `make_grid` from torchvision to work with videos.

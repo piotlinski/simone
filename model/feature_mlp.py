@@ -1,27 +1,35 @@
 import pytorch_lightning as pl
 import torch
-import torch.nn.functional as F
 from einops import rearrange
+from torch import Tensor
 
-from config import TRANSFORMER_CHANNELS, LATENT_CHANNELS, K, T
+from constants import LATENT_CHANNELS
+from constants import TRANSFORMER_CHANNELS
+from constants import XY_SPATIAL_DIM_AFTER_TRANSFORMER
+from constants import K
+from constants import T
+from model.common import MLP
 
 
 class FeatureMLP(pl.LightningModule):
-    def __init__(self, args):
+    def __init__(self):
         super().__init__()
-        self.save_hyperparameters(args)
+        self.save_hyperparameters()
 
-        self.spatial_linear_1 = torch.nn.Linear(in_features=TRANSFORMER_CHANNELS, out_features=1024)
-        self.spatial_linear_2 = torch.nn.Linear(in_features=1024, out_features=LATENT_CHANNELS * 2)
-        self.temporal_linear_1 = torch.nn.Linear(in_features=TRANSFORMER_CHANNELS, out_features=1024)
-        self.temporal_linear_2 = torch.nn.Linear(in_features=1024, out_features=LATENT_CHANNELS * 2)
+        self.spatial_mlp = MLP(
+            in_features=TRANSFORMER_CHANNELS, out_features=LATENT_CHANNELS * 2, hidden_features=[1024]
+        )
+        self.temporal_mlp = MLP(
+            in_features=TRANSFORMER_CHANNELS, out_features=LATENT_CHANNELS * 2, hidden_features=[1024]
+        )
 
-    def forward(self, x):
-        # x is the output of the transformer
-        x = rearrange(x, "b (t h w) c -> b t h w c", t=T, h=4, w=4, c=TRANSFORMER_CHANNELS)
+    def forward(self, x: Tensor):
+        x = rearrange(x, "b (t h w) c -> b t h w c", t=T, h=XY_SPATIAL_DIM_AFTER_TRANSFORMER, w=XY_SPATIAL_DIM_AFTER_TRANSFORMER, c=TRANSFORMER_CHANNELS)  # fmt: skip
 
         # Aggregate the temporal info to get the spatial features
+        # Note that XY_SPATIAL_DIM_AFTER_TRANSFORMER ** 2 must equal K
         spatial = torch.mean(x, dim=1)
+        # (b, h, w, c) at this point can also be interpreted as (b, k, c)
         spatial = rearrange(spatial, "b h w c -> (b h w) c")
 
         # Aggregate the spatial info to get the temporal features
@@ -29,15 +37,11 @@ class FeatureMLP(pl.LightningModule):
         temporal = rearrange(temporal, "b t c -> (b t) c", t=T, c=TRANSFORMER_CHANNELS)
 
         # Apply the MLPs
-        spatial = self.spatial_linear_1(spatial)
-        spatial = F.relu(spatial)
-        spatial = self.spatial_linear_2(spatial)
+        spatial = self.spatial_mlp(spatial)
         # Reshape to have 2 channels, for (mean, log_scale)
         spatial = rearrange(spatial, "(b k) (c c2) -> b k c c2", k=K, c=LATENT_CHANNELS, c2=2)
 
-        temporal = self.temporal_linear_1(temporal)
-        temporal = F.relu(temporal)
-        temporal = self.temporal_linear_2(temporal)
+        temporal = self.temporal_mlp(temporal)
         # Reshape to have 2 channels, for (mean, log_scale)
         temporal = rearrange(temporal, "(b t) (c c2) -> b t c c2", t=T, c=LATENT_CHANNELS, c2=2)
 
