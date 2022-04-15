@@ -1,6 +1,8 @@
 
 A Pytorch implementation of [SIMONe: View-Invariant, Temporally-Abstracted Object Representations via Unsupervised Video Decomposition](https://deepmind.com/research/publications/2021/SIMONe-View-Invariant-Temporally-Abstracted-Object-Representations-via-Unsupervised-Video-Decomposition)
 
+For an explanation of the model and code, see our [blog post](https://generallyintelligent.ai/open-source/2022-04-14-simone/).
+
 Currently, only the [CATER](https://github.com/deepmind/multi_object_datasets) dataset has been implemented.
 
 ## Usage
