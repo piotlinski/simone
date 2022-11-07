@@ -38,14 +38,17 @@ def latent_kl_loss(object_latents: Tensor, temporal_latents: Tensor):
     # and the prior, which is a unit normal distribution
     object_latent_dist = get_latent_dist(object_latents)
     temporal_latent_dist = get_latent_dist(temporal_latents)
-    latent_prior = torch.distributions.Normal(
+    object_latent_prior = torch.distributions.Normal(
         torch.zeros(object_latents.shape[:-1], device=object_latents.device, dtype=object_latents.dtype), scale=1
     )
-    object_latent_loss = (1 / k) * torch.distributions.kl.kl_divergence(object_latent_dist, latent_prior)
+    object_latent_loss = (1 / k) * torch.distributions.kl.kl_divergence(object_latent_dist, object_latent_prior)
     # The KL doesn't reduce all the way because the distribution considers the batch size to be (batch, K, LATENT_CHANNELS)
     object_latent_loss = object_latent_loss.sum(dim=(2, 1))
     assert object_latent_loss.shape == (b,)
-    temporal_latent_loss = (1 / t) * torch.distributions.kl.kl_divergence(temporal_latent_dist, latent_prior)
+    temporal_latent_prior = torch.distributions.Normal(
+        torch.zeros(temporal_latents.shape[:-1], device=temporal_latents.device, dtype=temporal_latents.dtype), scale=1
+    )
+    temporal_latent_loss = (1 / t) * torch.distributions.kl.kl_divergence(temporal_latent_dist, temporal_latent_prior)
     temporal_latent_loss = temporal_latent_loss.sum(dim=(2, 1))
     assert temporal_latent_loss.shape == (b,)
 
