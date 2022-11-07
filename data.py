@@ -17,18 +17,22 @@ This isn't ideal because n_gpus*n_workers in general won't divide evenly into 10
 so we just won't load some shards. And 2 of the training shards don't have an even number of examples,
 so we just excluded those entirely since we need each worker to have an identical number of examples.
 """
+import json
 import os
 import urllib.request
 from multiprocessing.pool import ThreadPool
 from os.path import exists
 from typing import Optional
+from pathlib import Path
 
+import numpy as np
 import pytorch_lightning as pl
 import torch
 import torch.distributed
 from einops import rearrange
+from PIL import Image
 from torch.utils.data import DataLoader
-from torch.utils.data import IterableDataset
+from torch.utils.data import Dataset
 
 from contrib.deepmind import cater_with_masks
 
@@ -39,6 +43,7 @@ os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 def download_dataset(local_dir: str = "dataset/"):
     """Download the dataset to `local_dir`."""
     # It might be possible to create a tfrecords dataset directly from the GCP URLs instead of downloading locally?
+    return
     def download_file(x):
         dataset, i = x
         url = f"https://storage.googleapis.com/multi-object-datasets/cater_with_masks/cater_with_masks_{dataset}.tfrecords-00{i:03d}-of-00100"
@@ -90,7 +95,7 @@ def _tfrecords_paths(mode: str = "train", local_dir: str = "dataset/"):
     return paths
 
 
-class CaterWithMasks(IterableDataset):
+class MultiScaleMNIST(Dataset):
     def __init__(self, world_size: int, mode: str = "train", sample_limit: int = None):
         """
         Args:
@@ -98,32 +103,36 @@ class CaterWithMasks(IterableDataset):
             mode: "train" or "test"
             sample_limit: the max number of samples to use from the dataset. It applies to each worker separately.
         """
+        super().__init__()
         self.sample_limit = sample_limit
         self.world_size = world_size
         self.mode = mode
 
-    def __iter__(self):
-        ddp_idx = int(os.environ.get("LOCAL_RANK", 0))
-        self.ddp_idx = ddp_idx
-        n_ddp = self.world_size
-        all_paths = _tfrecords_paths(self.mode)
-        num_files = len(all_paths) // n_ddp
-        self.this_gpu_paths = all_paths[ddp_idx * num_files : (ddp_idx + 1) * num_files]
+        path = os.path.join("dataset/", mode)
 
-        worker_info = torch.utils.data.get_worker_info()
-        if worker_info is None:  # single-process data loading, return the full iterator
-            our_paths = self.this_gpu_paths
-        else:  # in a worker process
-            idx = worker_info.id
-            num_workers = worker_info.num_workers
-            num_files = len(self.this_gpu_paths) // num_workers
-            our_paths = self.this_gpu_paths[idx * num_files : (idx + 1) * num_files]
-        tf_dataset = cater_with_masks.dataset(our_paths)
+        self.sequences = list(sorted(Path(path).glob("*")))
+        self.anns = [json.load(p.joinpath("annotations.json").open()) for p in self.sequences]
 
-        return iter(_yield_item_from_deepmind_dataset(tf_dataset, sample_limit=self.sample_limit))
+    @staticmethod
+    def load_image(path):
+        return np.array(Image.open(path))
+
+    def __getitem__(self, index):
+        sequence = self.sequences[index]
+
+        images_files = list(sorted(sequence.glob("*.jpg")))
+        imgs = np.stack(self.load_image(p) for p in images_files).transpose(0, 3, 1, 2)
+
+        imgs = imgs.astype(np.float) / 255.0
+        imgs = torch.from_numpy(imgs).float()
+
+        return imgs, imgs.expand(imgs.shape[0], 10, *imgs.shape[1:])
+
+    def __len__(self):
+        return len(self.sequences)
 
 
-class CATERDataModule(pl.LightningDataModule):
+class MNISTDataModule(pl.LightningDataModule):
     def __init__(
         self,
         n_gpus: int,
@@ -140,14 +149,14 @@ class CATERDataModule(pl.LightningDataModule):
         self.n_gpus = n_gpus
 
     def setup(self, stage: Optional[str] = None):
-        self.train_dataset = CaterWithMasks(self.n_gpus, "train")
-        self.val_dataset = CaterWithMasks(self.n_gpus, "test", sample_limit=self.val_dataset_size)
+        self.train_dataset = MultiScaleMNIST(self.n_gpus, "train")
+        self.val_dataset = MultiScaleMNIST(self.n_gpus, "test", sample_limit=self.val_dataset_size)
 
     def train_dataloader(self):
         return DataLoader(
             self.train_dataset,
             batch_size=self.train_batch_size,
-            shuffle=False,
+            shuffle=True,
             drop_last=False,
             num_workers=self.num_train_workers,
         )

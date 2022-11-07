@@ -30,7 +30,7 @@ class WandbCallback(pl.Callback):
         self.batch_size = batch_size
 
     def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx):
-        batch, mask = batch
+        batch, _ = batch
         spatial = outputs["object_latents"]
         temporal = outputs["temporal_latents"]
         weighted_pixels = outputs["weighted_pixels"]
@@ -70,7 +70,7 @@ class WandbCallback(pl.Callback):
         wandb_lib.log_scalar(trainer, "loss/temporal_latent", outputs["temporal_latent_loss"], freq=10)
 
     def on_validation_batch_end(self, trainer, pl_module, outputs, batch, batch_idx, dataloader_idx):
-        batch, mask = batch
+        batch, _ = batch
         wandb_lib.log_video(trainer, "val/dataset", batch, freq=1)
 
         # loss, pixels, weights_softmax, weighted_pixels, spatial, temporal, time_indexes = outputs
@@ -82,7 +82,7 @@ class WandbCallback(pl.Callback):
 
         # do all the gathering
         weighted_pixels = rearrange(pl_module.all_gather(weighted_pixels), "g b t h w c -> (g b) t h w c")
-        mask = rearrange(pl_module.all_gather(mask), "g b t k h w c -> (g b) t k h w c")
+        # mask = rearrange(pl_module.all_gather(mask), "g b t k h w c -> (g b) t k h w c")
         weights_softmax = rearrange(pl_module.all_gather(weights_softmax), "g b t k h w -> (g b) t k h w")
 
         # shape is (b, t, w, h, c)
@@ -105,9 +105,9 @@ class WandbCallback(pl.Callback):
         wandb_lib.log_video(trainer, "val/segmentation", segmentation, freq=1)
 
         # Compute ARI
-        if torch.distributed.get_rank() == 0:
-            ari = compute_ari(mask.cpu(), weights_softmax.cpu())
-            wandb_lib.log_scalar(trainer, "val/ARI", ari.mean(), freq=1)
+        # if torch.distributed.get_rank() == 0:
+        #     ari = compute_ari(mask.cpu(), weights_softmax.cpu())
+        #     wandb_lib.log_scalar(trainer, "val/ARI", ari.mean(), freq=1)
 
         # Log latents
         # Shape is (b, K or T, 32, 2)

@@ -9,7 +9,7 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import WandbLogger
 
 from constants import LOG_FREQ
-from data import CATERDataModule
+from data import MNISTDataModule
 from data import download_dataset
 from model.simone import SIMONE
 from utils import wandb_lib
@@ -92,9 +92,9 @@ def _create_model(args: Namespace) -> SIMONE:
     return model
 
 
-def _create_datamodule(args: Namespace) -> CATERDataModule:
+def _create_datamodule(args: Namespace) -> MNISTDataModule:
     download_dataset()
-    datamodule = CATERDataModule(
+    datamodule = MNISTDataModule(
         n_gpus=args.gpus,
         train_batch_size=args.batch_size,
         val_batch_size=args.val_batch_size,
